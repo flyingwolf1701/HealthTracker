@@ -8,6 +8,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,9 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
     private lateinit var healthConnectManager: HealthConnectManager
@@ -52,13 +56,16 @@ class MainActivity : ComponentActivity() {
 
 class WeightViewModel(private val healthConnectManager: HealthConnectManager) : ViewModel() {
     private val _weight = mutableStateOf<Double?>(null)
-    val weight: State<Double?> = _weight
+//    val weight: State<Double?> = _weight
 
     private val _isLoading = mutableStateOf(false)
     val isLoading: State<Boolean> = _isLoading
 
     private val _isMetric = mutableStateOf(true)
     val isMetric: State<Boolean> = _isMetric
+
+    private val _weightRecords = mutableStateOf<List<Pair<Instant, Double>>>(emptyList())
+    val weightRecords: State<List<Pair<Instant, Double>>> = _weightRecords
 
     fun fetchLatestWeight() {
         viewModelScope.launch {
@@ -74,17 +81,36 @@ class WeightViewModel(private val healthConnectManager: HealthConnectManager) : 
         }
     }
 
+    fun fetchWeightRecords() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                _weightRecords.value = healthConnectManager.readWeightRecords()
+            } catch (e: Exception) {
+                Log.e("WeightViewModel", "Error fetching weight records", e)
+                _weightRecords.value = emptyList()
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
     fun toggleUnit() {
         _isMetric.value = !_isMetric.value
     }
 
-    fun getFormattedWeight(): String {
-        val weightValue = weight.value
-        return when {
-            weightValue == null -> "Not available"
-            isMetric.value -> String.format("%.2f kg", weightValue)
-            else -> String.format("%.2f lbs", weightValue * 2.20462)
+    fun getFormattedWeight(weight: Double): String {
+        return if (isMetric.value) {
+            String.format("%.2f kg", weight)
+        } else {
+            String.format("%.2f lbs", weight * 2.20462)
         }
+    }
+
+    fun getFormattedDate(instant: Instant): String {
+        val formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy")
+            .withZone(ZoneId.systemDefault())
+        return formatter.format(instant)
     }
 
     suspend fun isHealthConnectAvailable(): Boolean {
@@ -95,6 +121,12 @@ class WeightViewModel(private val healthConnectManager: HealthConnectManager) : 
 @Composable
 fun BodyWeightScreen(viewModel: WeightViewModel) {
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        if (viewModel.isHealthConnectAvailable()) {
+            viewModel.fetchWeightRecords()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -124,10 +156,20 @@ fun BodyWeightScreen(viewModel: WeightViewModel) {
             if (viewModel.isLoading.value) {
                 CircularProgressIndicator()
             } else {
-                Text(
-                    text = "Latest Weight: ${viewModel.getFormattedWeight()}",
-                    style = MaterialTheme.typography.bodyLarge
-                )
+                LazyColumn {
+                    itemsIndexed(viewModel.weightRecords.value) { _, (date, weight) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(viewModel.getFormattedDate(date))
+                            Text(viewModel.getFormattedWeight(weight))
+                        }
+                        Divider()
+                    }
+                }
             }
         }
 

@@ -28,6 +28,22 @@ class HealthConnectManager(private val context: Context) {
         response.records.maxByOrNull { it.time }?.weight?.inKilograms
     }
 
+    suspend fun readWeightRecords(limit: Int = 10): List<Pair<Instant, Double>> = withContext(Dispatchers.IO) {
+        val now = Instant.now()
+        val oneYearAgo = now.minus(java.time.Duration.ofDays(365))
+
+        val request = ReadRecordsRequest(
+            recordType = WeightRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(oneYearAgo, now)
+        )
+
+        val response = healthConnectClient.readRecords(request)
+        response.records
+            .sortedByDescending { it.time }
+            .take(limit)
+            .map { Pair(it.time, it.weight.inKilograms) }
+    }
+
     suspend fun isHealthConnectAvailable(): Boolean {
         return try {
             HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
