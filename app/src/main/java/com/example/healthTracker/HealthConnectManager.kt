@@ -51,5 +51,4 @@ class HealthConnectManager(private val context: Context) {
             false
         }
     }
-
 }
