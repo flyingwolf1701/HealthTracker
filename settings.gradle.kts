@@ -16,6 +16,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven("https://developer.android.com/distribute/maven2/")
     }
 }
 
