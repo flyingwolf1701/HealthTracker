@@ -9,6 +9,7 @@ import androidx.health.connect.client.HealthConnectClient
 //import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
@@ -17,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 
 class HealthConnectManager(private val context: Context) {
     private val healthConnectClient by lazy { HealthConnectClient.getOrCreate(context) }
@@ -26,6 +28,7 @@ class HealthConnectManager(private val context: Context) {
         HealthPermission.getWritePermission(WeightRecord::class),
         HealthPermission.getReadPermission(SleepSessionRecord::class),
         HealthPermission.getWritePermission(SleepSessionRecord::class),
+        HealthPermission.getReadPermission(SleepSessionRecord::class),
     )
 
 //    private var permissionsGranted = mutableStateOf(false)
@@ -110,6 +113,38 @@ class HealthConnectManager(private val context: Context) {
 //        val response = healthConnectClient.readRecords(request)
 //        response.records.maxByOrNull { it.startTime }
 //    }
+
+    suspend fun readStepsPreviousDay(): List<StepsRecord> = withContext(Dispatchers.IO) {
+        val now = Instant.now()
+        val yesterday = now.minus(1, ChronoUnit.DAYS)
+
+        val request = ReadRecordsRequest(
+            recordType = StepsRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(
+                yesterday.truncatedTo(ChronoUnit.DAYS),
+                yesterday.plus(1, ChronoUnit.DAYS)
+            )
+        )
+
+        val response = healthConnectClient.readRecords(request)
+        response.records
+    }
+
+    suspend fun readStepsPreviousMonth(): List<StepsRecord> = withContext(Dispatchers.IO) {
+        val now = Instant.now()
+        val lastMonth = now.minus(1, ChronoUnit.MONTHS)
+
+        val request = ReadRecordsRequest(
+            recordType = StepsRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(
+                lastMonth.truncatedTo(ChronoUnit.MONTHS),
+                lastMonth.plus(1, ChronoUnit.MONTHS)
+            )
+        )
+
+        val response = healthConnectClient.readRecords(request)
+        response.records
+    }
 
     fun isHealthConnectAvailable(): Boolean {
         return try {

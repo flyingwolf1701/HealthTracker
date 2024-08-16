@@ -97,6 +97,22 @@ class SleepViewModel(private val healthConnectManager: HealthConnectManager) : V
             }
     }
 
+    fun getJsonString(session: SleepSessionRecord): String {
+        val gson = GsonBuilder()
+            .registerTypeAdapter(Instant::class.java, object : TypeAdapter<Instant>() {
+                override fun write(out: JsonWriter, value: Instant?) {
+                    out.value(value?.toEpochMilli())
+                }
+
+                override fun read(`in`: JsonReader): Instant {
+                    return Instant.ofEpochMilli(`in`.nextLong())
+                }
+            })
+            .setPrettyPrinting()
+            .create()
+        return gson.toJson(session)
+    }
+
     fun getFormattedDate(instant: Instant): String {
         val formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm")
             .withZone(ZoneId.systemDefault())
@@ -151,12 +167,17 @@ fun SleepDataScreen(viewModel: SleepViewModel, onBackClick: () -> Unit) {
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        Button(
-            onClick = onBackClick,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Back to Main")
-        }
+        BackToMainButton(onBackClick)
+    }
+}
+
+@Composable
+fun BackToMainButton(onBackClick: () -> Unit) {
+    Button(
+        onClick = onBackClick,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text("Back to Main")
     }
 }
 
@@ -203,26 +224,11 @@ fun SleepSessionCard(
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Button(onClick = onExpandToggle) {
-                Text(text = if (isExpanded) "Hide Details" else "Show Details")
-            }
+            ExpandButton(isExpanded, onExpandToggle)
             if (isExpanded) {
                 Spacer(modifier = Modifier.height(8.dp))
-                val gson = GsonBuilder()
-                    .registerTypeAdapter(Instant::class.java, object : TypeAdapter<Instant>() {
-                        override fun write(out: JsonWriter, value: Instant?) {
-                            out.value(value?.toEpochMilli())
-                        }
-
-                        override fun read(`in`: JsonReader): Instant {
-                            return Instant.ofEpochMilli(`in`.nextLong())
-                        }
-                    })
-                    .setPrettyPrinting()
-                    .create()
-                val json = gson.toJson(session)
                 Text(
-                    text = "Raw Data: \n$json",
+                    text = "Raw Data: \n${viewModel.getJsonString(session)}",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -233,16 +239,23 @@ fun SleepSessionCard(
     }
 }
 
+@Composable
+fun ExpandButton(isExpanded: Boolean, onExpandToggle: () -> Unit) {
+    Button(onClick = onExpandToggle) {
+        Text(text = if (isExpanded) "Hide Sleep Data" else "Show Sleep Data")
+    }
+}
+
 fun getSleepStageString(stage: Int): String {
     return when (stage) {
-        SleepSessionRecord.STAGE_TYPE_AWAKE -> "Awake"
-        SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED -> "Awake in Bed"
-        SleepSessionRecord.STAGE_TYPE_SLEEPING -> "Sleeping"
-        SleepSessionRecord.STAGE_TYPE_OUT_OF_BED -> "Out of Bed"
-        SleepSessionRecord.STAGE_TYPE_LIGHT -> "Light Sleep"
-        SleepSessionRecord.STAGE_TYPE_DEEP -> "Deep Sleep"
-        SleepSessionRecord.STAGE_TYPE_REM -> "REM Sleep"
-        else -> "Unknown"
+        SleepSessionRecord.STAGE_TYPE_AWAKE -> "Awake" // 1
+        SleepSessionRecord.STAGE_TYPE_SLEEPING -> "Sleeping" // 2
+        SleepSessionRecord.STAGE_TYPE_OUT_OF_BED -> "Awake out of Bed" // 3
+        SleepSessionRecord.STAGE_TYPE_LIGHT -> "Light Sleep" // 4
+        SleepSessionRecord.STAGE_TYPE_DEEP -> "Deep Sleep" // 5
+        SleepSessionRecord.STAGE_TYPE_REM -> "REM Sleep" // 6
+        SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED -> "Awake in Bed" // 7
+        else -> "Unknown" // 0
     }
 }
 
