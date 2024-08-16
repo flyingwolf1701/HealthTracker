@@ -73,5 +73,6 @@ dependencies {
 
     // android health
     implementation(libs.androidx.connect.client)
+    implementation(libs.gson)
 
 }

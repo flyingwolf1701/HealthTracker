@@ -136,7 +136,9 @@ fun SleepDataScreen(viewModel: SleepViewModel, onBackClick: () -> Unit) {
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             )
         } else {
-            LazyColumn {
+            LazyColumn(
+                modifier = Modifier.weight(1f)
+            ) {
                 items(sleepSessions.reversed()) { session ->
                     SleepSessionCard(
                         session = session,
