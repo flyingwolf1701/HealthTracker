@@ -13,12 +13,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.*
+import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.GsonBuilder
+import com.google.gson.TypeAdapter
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonWriter
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.time.ZoneId
-import kotlin.time.Duration
 
 class SleepDataActivity : ComponentActivity() {
     private lateinit var healthConnectManager: HealthConnectManager
@@ -39,11 +48,14 @@ class SleepDataActivity : ComponentActivity() {
 }
 
 class SleepViewModel(private val healthConnectManager: HealthConnectManager) : ViewModel() {
-    private val _sleepSessions = mutableStateOf<List<HealthConnectManager.SleepSessionData>>(emptyList())
-    val sleepSessions: State<List<HealthConnectManager.SleepSessionData>> = _sleepSessions
+    private val _sleepSessions = MutableStateFlow<List<SleepSessionRecord>>(emptyList())
+    val sleepSessions: StateFlow<List<SleepSessionRecord>> = _sleepSessions.asStateFlow()
 
-    private val _isLoading = mutableStateOf(false)
-    val isLoading: State<Boolean> = _isLoading
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _expandedSessionId = MutableStateFlow<String?>(null)
+    val expandedSessionId: StateFlow<String?> = _expandedSessionId.asStateFlow()
 
     fun fetchSleepSessions() {
         viewModelScope.launch {
@@ -58,21 +70,52 @@ class SleepViewModel(private val healthConnectManager: HealthConnectManager) : V
         }
     }
 
-    fun getFormattedDate(instant: java.time.Instant): String {
+    fun toggleExpanded(sessionId: String) {
+        _expandedSessionId.value = if (_expandedSessionId.value == sessionId) null else sessionId
+    }
+
+    fun getTotalSleepDuration(session: SleepSessionRecord): Duration {
+        return Duration.between(session.startTime, session.endTime)
+    }
+
+    fun getActualSleepTime(session: SleepSessionRecord): Duration {
+        return session.stages.filter {
+            it.stage != SleepSessionRecord.STAGE_TYPE_AWAKE &&
+                    it.stage != SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED &&
+                    it.stage != SleepSessionRecord.STAGE_TYPE_OUT_OF_BED
+        }.sumOf { stage ->
+            Duration.between(stage.startTime, stage.endTime).toMillis()
+        }.let { Duration.ofMillis(it) }
+    }
+
+    fun getSleepStages(session: SleepSessionRecord): Map<Int, Duration> {
+        return session.stages.groupBy { it.stage }
+            .mapValues { (_, stages) ->
+                stages.sumOf { stage ->
+                    Duration.between(stage.startTime, stage.endTime).toMillis()
+                }.let { Duration.ofMillis(it) }
+            }
+    }
+
+    fun getFormattedDate(instant: Instant): String {
         val formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm")
             .withZone(ZoneId.systemDefault())
         return formatter.format(instant)
     }
 
     fun getFormattedDuration(duration: Duration): String {
-        val hours = duration.inWholeHours
-        val minutes = duration.inWholeMinutes % 60
-        return String.format("%d h %02d min", hours, minutes)
+        val hours = duration.toHours()
+        val minutes = duration.minusHours(hours).toMinutes()
+        return "${hours}h ${minutes}m"
     }
 }
 
 @Composable
 fun SleepDataScreen(viewModel: SleepViewModel, onBackClick: () -> Unit) {
+    val sleepSessions by viewModel.sleepSessions.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val expandedSessionId by viewModel.expandedSessionId.collectAsState()
+
     LaunchedEffect(Unit) {
         viewModel.fetchSleepSessions()
     }
@@ -80,36 +123,124 @@ fun SleepDataScreen(viewModel: SleepViewModel, onBackClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(16.dp)
     ) {
-        Text("Sleep Sessions", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Sleep Sessions",
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
 
-        if (viewModel.isLoading.value) {
-            CircularProgressIndicator()
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
         } else {
             LazyColumn {
-                items(viewModel.sleepSessions.value) { session ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Start: ${viewModel.getFormattedDate(session.startTime)}")
-                            Text("End: ${viewModel.getFormattedDate(session.endTime)}")
-                            Text("Duration: ${viewModel.getFormattedDuration(session.duration)}")
-                        }
-                    }
+                items(sleepSessions.reversed()) { session ->
+                    SleepSessionCard(
+                        session = session,
+                        viewModel = viewModel,
+                        isExpanded = expandedSessionId == session.metadata.id,
+                        onExpandToggle = { viewModel.toggleExpanded(session.metadata.id) }
+                    )
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onBackClick, modifier = Modifier.fillMaxWidth()) {
+        Button(
+            onClick = onBackClick,
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Text("Back to Main")
         }
+    }
+}
+
+@Composable
+fun SleepSessionCard(
+    session: SleepSessionRecord,
+    viewModel: SleepViewModel,
+    isExpanded: Boolean,
+    onExpandToggle: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Text(
+                text = "Sleep Session: ${viewModel.getFormattedDate(session.startTime)}",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Total Duration: ${viewModel.getFormattedDuration(viewModel.getTotalSleepDuration(session))}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = "Actual Sleep Time: ${viewModel.getFormattedDuration(viewModel.getActualSleepTime(session))}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Sleep Stages:",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            viewModel.getSleepStages(session).forEach { (stage, duration) ->
+                Text(
+                    text = "${getSleepStageString(stage)}: ${viewModel.getFormattedDuration(duration)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = onExpandToggle) {
+                Text(text = if (isExpanded) "Hide Details" else "Show Details")
+            }
+            if (isExpanded) {
+                Spacer(modifier = Modifier.height(8.dp))
+                val gson = GsonBuilder()
+                    .registerTypeAdapter(Instant::class.java, object : TypeAdapter<Instant>() {
+                        override fun write(out: JsonWriter, value: Instant?) {
+                            out.value(value?.toEpochMilli())
+                        }
+
+                        override fun read(`in`: JsonReader): Instant {
+                            return Instant.ofEpochMilli(`in`.nextLong())
+                        }
+                    })
+                    .setPrettyPrinting()
+                    .create()
+                val json = gson.toJson(session)
+                Text(
+                    text = "Raw Data: \n$json",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                )
+            }
+        }
+    }
+}
+
+fun getSleepStageString(stage: Int): String {
+    return when (stage) {
+        SleepSessionRecord.STAGE_TYPE_AWAKE -> "Awake"
+        SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED -> "Awake in Bed"
+        SleepSessionRecord.STAGE_TYPE_SLEEPING -> "Sleeping"
+        SleepSessionRecord.STAGE_TYPE_OUT_OF_BED -> "Out of Bed"
+        SleepSessionRecord.STAGE_TYPE_LIGHT -> "Light Sleep"
+        SleepSessionRecord.STAGE_TYPE_DEEP -> "Deep Sleep"
+        SleepSessionRecord.STAGE_TYPE_REM -> "REM Sleep"
+        else -> "Unknown"
     }
 }
 

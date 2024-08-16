@@ -3,11 +3,10 @@ package com.example.healthTracker
 import android.content.Context
 import android.util.Log
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContract
-import androidx.compose.runtime.mutableStateOf
+//import androidx.activity.result.contract.ActivityResultContract
+//import androidx.compose.runtime.mutableStateOf
 import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.PermissionController
-
+//import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.WeightRecord
@@ -16,7 +15,6 @@ import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.health.connect.client.units.Mass
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.time.Duration.Companion.milliseconds
 import java.time.Instant
 import java.time.ZonedDateTime
 
@@ -25,31 +23,33 @@ class HealthConnectManager(private val context: Context) {
 
     val permissions = setOf(
         HealthPermission.getReadPermission(WeightRecord::class),
-        HealthPermission.getWritePermission(WeightRecord::class)
+        HealthPermission.getWritePermission(WeightRecord::class),
+        HealthPermission.getReadPermission(SleepSessionRecord::class),
+        HealthPermission.getWritePermission(SleepSessionRecord::class),
     )
 
-    private var permissionsGranted = mutableStateOf(false)
+//    private var permissionsGranted = mutableStateOf(false)
 
     suspend fun hasAllPermissions(permissions: Set<String>): Boolean {
         return healthConnectClient.permissionController.getGrantedPermissions().containsAll(permissions)
     }
 
-    fun requestPermissionsActivityContract(): ActivityResultContract<Set<String>, Set<String>> {
-        return PermissionController.createRequestPermissionResultContract()
-    }
+//    fun requestPermissionsActivityContract(): ActivityResultContract<Set<String>, Set<String>> {
+//        return PermissionController.createRequestPermissionResultContract()
+//    }
 
-    suspend fun readLatestWeight(): Double? = withContext(Dispatchers.IO) {
-        val now = Instant.now()
-        val oneWeekAgo = now.minus(java.time.Duration.ofDays(7))
-
-        val request = ReadRecordsRequest(
-            recordType = WeightRecord::class,
-            timeRangeFilter = TimeRangeFilter.between(oneWeekAgo, now)
-        )
-
-        val response = healthConnectClient.readRecords(request)
-        response.records.maxByOrNull { it.time }?.weight?.inPounds
-    }
+//    suspend fun readLatestWeight(): Double? = withContext(Dispatchers.IO) {
+//        val now = Instant.now()
+//        val oneWeekAgo = now.minus(java.time.Duration.ofDays(7))
+//
+//        val request = ReadRecordsRequest(
+//            recordType = WeightRecord::class,
+//            timeRangeFilter = TimeRangeFilter.between(oneWeekAgo, now)
+//        )
+//
+//        val response = healthConnectClient.readRecords(request)
+//        response.records.maxByOrNull { it.time }?.weight?.inPounds
+//    }
 
     suspend fun readWeightRecords(limit: Int = 10): List<Pair<Instant, Double>> = withContext(Dispatchers.IO) {
         val now = Instant.now()
@@ -85,7 +85,7 @@ class HealthConnectManager(private val context: Context) {
         }
     }
 
-    suspend fun readSleepSessions(limit: Int = 10): List<SleepSessionData> = withContext(Dispatchers.IO) {
+    suspend fun readSleepSessions(): List<SleepSessionRecord> = withContext(Dispatchers.IO) {
         val now = Instant.now()
         val oneMonthAgo = now.minus(java.time.Duration.ofDays(30))
 
@@ -96,22 +96,20 @@ class HealthConnectManager(private val context: Context) {
 
         val response = healthConnectClient.readRecords(request)
         response.records
-            .sortedByDescending { it.startTime }
-            .take(limit)
-            .map {
-                SleepSessionData(
-                    startTime = it.startTime,
-                    endTime = it.endTime,
-                    duration = (it.endTime.toEpochMilli() - it.startTime.toEpochMilli()).milliseconds
-                )
-            }
     }
 
-    data class SleepSessionData(
-        val startTime: Instant,
-        val endTime: Instant,
-        val duration: kotlin.time.Duration
-    )
+//    suspend fun readLatestSleepSession(): SleepSessionRecord? = withContext(Dispatchers.IO) {
+//        val now = Instant.now()
+//        val oneWeekAgo = now.minus(java.time.Duration.ofDays(7))
+//
+//        val request = ReadRecordsRequest(
+//            recordType = SleepSessionRecord::class,
+//            timeRangeFilter = TimeRangeFilter.between(oneWeekAgo, now)
+//        )
+//
+//        val response = healthConnectClient.readRecords(request)
+//        response.records.maxByOrNull { it.startTime }
+//    }
 
     fun isHealthConnectAvailable(): Boolean {
         return try {
