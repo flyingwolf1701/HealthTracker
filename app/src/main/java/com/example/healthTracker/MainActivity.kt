@@ -1,27 +1,33 @@
 package com.example.healthTracker
 
-
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.navigation.NavController
+import androidx.navigation.compose.rememberNavController
+import com.example.healthTracker.navigation.AppNavigation
+import com.example.healthTracker.ui.components.Footer
+import com.example.healthTracker.ui.components.Header
+import com.example.healthTracker.ui.screens.HomeScreen
 
 class MainActivity : ComponentActivity() {
+    private lateinit var healthConnectManager: HealthConnectManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        healthConnectManager = HealthConnectManager(this)
+
         setContent {
             MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    MainScreen(
-                        onBasicDataClick = { startActivity(Intent(this, BasicDataActivity::class.java)) },
-                        onSleepDataClick = { startActivity(Intent(this, SleepDataActivity::class.java)) }
-                    )
+                val navController = rememberNavController()
+                Scaffold(
+                    topBar = { Header(navController) },
+                    bottomBar = { Footer(navController) }
+                ) { innerPadding ->
+                    AppNavigation(navController, innerPadding, healthConnectManager)
                 }
             }
         }
@@ -29,22 +35,20 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MainScreen(onBasicDataClick: () -> Unit, onSleepDataClick: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Button(onClick = onBasicDataClick, modifier = Modifier.fillMaxWidth()) {
-            Text("Basic Data")
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onSleepDataClick, modifier = Modifier.fillMaxWidth()) {
-            Text("Sleep Data")
-        }
+fun MainScreen(navController: NavController) {
+    Scaffold(
+        topBar = { Header(navController) },
+        bottomBar = { Footer(navController) }
+    ) { innerPadding ->
+        HomeScreen()
     }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun PreviewMainScreen() {
+    val navController = rememberNavController()
+    MainScreen(navController)
 }
 
 

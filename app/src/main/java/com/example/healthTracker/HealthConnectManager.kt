@@ -20,6 +20,8 @@ import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
 
+typealias SleepSessionsTypeAlias = List<SleepSessionRecord>
+
 class HealthConnectManager(private val context: Context) {
     private val healthConnectClient by lazy { HealthConnectClient.getOrCreate(context) }
 
@@ -88,7 +90,12 @@ class HealthConnectManager(private val context: Context) {
         }
     }
 
-    suspend fun readSleepSessions(): List<SleepSessionRecord> = withContext(Dispatchers.IO) {
+    suspend fun getSleepSessionById(sessionId: String): SleepSessionRecord? {
+        val sleepSessions = readSleepSessions()
+        return sleepSessions.find { it.metadata.id == sessionId }
+    }
+    
+    suspend fun readSleepSessions(): SleepSessionsTypeAlias = withContext(Dispatchers.IO) {
         val now = Instant.now()
         val oneMonthAgo = now.minus(java.time.Duration.ofDays(30))
 
